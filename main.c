@@ -189,7 +189,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 		wcscpy_s(childObj->pwszName, pObjInfo->Name.Length / 2 + sizeof(wchar_t), pObjInfo->Name.Buffer);
 		wcscpy_s(childObj->pwszTypeName, pObjInfo->TypeName.Length / 2 + sizeof(wchar_t), pObjInfo->TypeName.Buffer);
 
-		if (_wcsicmp(childObj->pwszTypeName, L"Directory") == 0)
+		if (_wcsicmp(childObj->pwszTypeName, L"Directory") == 0 && bRecurse)
 		{
 			res = scanDirectory(hObjDir, childObj->pwszName, &childObj, bRecurse);
 			if (res != 0)
@@ -265,7 +265,7 @@ void printEntry(obj_entry_t *obj, int depth, int last)
 	for (int i = 0; i < depth - 1; i++)
 		printf("\xB3  ");
 	if (depth > 0)
-		printf("%c\xC4", (last ? '\xC0' : '\xC3'));
+		printf("%c\xC4 ", (last ? '\xC0' : '\xC3'));
 	printf("%S", obj->pwszName);
 	if (_wcsicmp(obj->pwszTypeName, L"SymbolicLink") == 0)
 	{
@@ -281,10 +281,13 @@ void printDirectory(obj_entry_t *objDir)
 	printEntry(objDir, 0, 1);
 }
 
-int main()
+int wmain(int argc, wchar_t *argv[])
 {
 	int res = 0;
 	HANDLE hNtdll = NULL;
+	PWSTR pwzTarget = L"\\";
+	SIZE_T targetLen = 1;
+	BOOL bRecurse = FALSE;
 	obj_entry_t *rootObj = NULL;
 
 	hNtdll = GetModuleHandleA("ntdll.dll");
@@ -335,10 +338,27 @@ int main()
 		goto cleanup;
 	}
 
+	if (argc >= 2 && _wcsicmp(argv[1], L"-R") == 0)
+	{
+		bRecurse = TRUE;
+		argc--;
+		argv[1] = argv[0];
+		argv++;
+	}
+
+	if (argc == 2)
+		pwzTarget = argv[1];
+
+	targetLen = wcslen(pwzTarget);
+	if (targetLen == 0)
+		pwzTarget = L"\\";
+	else if (targetLen > 1 && pwzTarget[targetLen - 1] == L'\\')
+		pwzTarget[targetLen - 1] = L'\0';
+
 	rootObj = safe_alloc(sizeof(*rootObj));
 	rootObj->entrySize = sizeof(*rootObj);
 	
-	res = scanDirectory(NULL, L"\\", &rootObj, TRUE);
+	res = scanDirectory(NULL, pwzTarget, &rootObj, bRecurse);
 	if (res != 0)
 		goto cleanup;
 
