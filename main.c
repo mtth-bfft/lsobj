@@ -144,6 +144,56 @@ PVOID safe_realloc(PVOID buffer, SIZE_T bytes)
 	return res;
 }
 
+int scanSymlink(HANDLE hParentDir, obj_entry_t *obj)
+{
+	int res = 0;
+	NTSTATUS status = STATUS_SUCCESS;
+	HANDLE hSymLink = NULL;
+	UNICODE_STRING usSymLinkName = { 0 };
+	UNICODE_STRING usSymLinkTarget = { 0 };
+	ULONG ulTargetLen = 0;
+	OBJECT_ATTRIBUTES symLinkAttr = { 0 };
+
+	usSymLinkTarget.Length = usSymLinkTarget.MaximumLength = 0;
+	pRtlInitUnicodeString(&usSymLinkName, obj->pwszName);
+	InitializeObjectAttributes(&symLinkAttr, &usSymLinkName, 0, hParentDir, NULL);
+	status = pNtOpenSymbolicLinkObject(&hSymLink, GENERIC_READ, &symLinkAttr);
+	if (NT_ERROR(status))
+	{
+		res = status;
+		fprintf(stderr, " [!] NtOpenSymbolicLinkObject(): code 0x%lX\n", res);
+		goto cleanup;
+	}
+
+	status = pNtQuerySymbolicLinkObject(hSymLink, &usSymLinkTarget, &ulTargetLen);
+	if (status != STATUS_BUFFER_TOO_SMALL || ulTargetLen == 0 || ulTargetLen >= USHRT_MAX)
+	{
+		res = (status == STATUS_SUCCESS ? -1 : status);
+		fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code %ld\n", res);
+		goto cleanup;
+	}
+
+	usSymLinkTarget.Buffer = safe_alloc(ulTargetLen);
+	usSymLinkTarget.Length = 0;
+	usSymLinkTarget.MaximumLength = (USHORT)ulTargetLen;
+
+	status = pNtQuerySymbolicLinkObject(hSymLink, &usSymLinkTarget, &ulTargetLen);
+	if (NT_ERROR(status))
+	{
+		res = status;
+		fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code 0x%lX\n", res);
+		goto cleanup;
+	}
+
+	ulTargetLen = usSymLinkTarget.Length + sizeof(wchar_t);
+	obj->pwszSymlinkTarget = safe_alloc(ulTargetLen);
+	wcsncpy_s(obj->pwszSymlinkTarget, ulTargetLen / 2, usSymLinkTarget.Buffer, ulTargetLen / 2 - 1);
+
+cleanup:
+	CloseHandle(hSymLink);
+	return res;
+}
+
 int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj, BOOL bRecurse)
 {
 	int res = 0;
@@ -151,7 +201,6 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 	OBJECT_ATTRIBUTES objAttr = { 0 };
 	NTSTATUS status = STATUS_SUCCESS;
 	HANDLE hObjDir = NULL;
-	HANDLE hSymLink = NULL;
 	ULONG ulQueryContext = 0;
 	SIZE_T objInfoSize = 0x1000;
 	POBJECT_DIRECTORY_INFORMATION pObjInfo = safe_alloc(objInfoSize);
@@ -220,48 +269,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 		}
 		else if (_wcsicmp(childObj->pwszTypeName, L"SymbolicLink") == 0)
 		{
-			UNICODE_STRING usSymLinkName = { 0 };
-			UNICODE_STRING usSymLinkTarget = { 0 };
-			ULONG ulTargetLen = 0;
-			OBJECT_ATTRIBUTES symLinkAttr = { 0 };
-			
-			usSymLinkTarget.Length = usSymLinkTarget.MaximumLength = 0;
-			pRtlInitUnicodeString(&usSymLinkName, childObj->pwszName);
-			InitializeObjectAttributes(&symLinkAttr, &usSymLinkName, 0, hObjDir, NULL);
-			status = pNtOpenSymbolicLinkObject(&hSymLink, GENERIC_READ, &symLinkAttr);
-			if (NT_ERROR(status))
-			{
-				res = status;
-				fprintf(stderr, " [!] NtOpenSymbolicLinkObject(): code 0x%lX\n", res);
-				goto cleanup; 
-			}
-
-			status = pNtQuerySymbolicLinkObject(hSymLink, &usSymLinkTarget, &ulTargetLen);
-			if (status != STATUS_BUFFER_TOO_SMALL || ulTargetLen == 0 || ulTargetLen >= USHRT_MAX)
-			{
-				res = (status == STATUS_SUCCESS ? -1 : status);
-				fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code %ld\n", res);
-				goto cleanup;
-			}
-
-			usSymLinkTarget.Buffer = safe_alloc(ulTargetLen);
-			usSymLinkTarget.Length = 0;
-			usSymLinkTarget.MaximumLength = (USHORT)ulTargetLen;
-
-			status = pNtQuerySymbolicLinkObject(hSymLink, &usSymLinkTarget, &ulTargetLen);
-			if (NT_ERROR(status))
-			{
-				res = status;
-				fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code 0x%lX\n", res);
-				goto cleanup;
-			}
-
-			ulTargetLen = usSymLinkTarget.Length + sizeof(wchar_t);
-			childObj->pwszSymlinkTarget = safe_alloc(ulTargetLen);
-			wcsncpy_s(childObj->pwszSymlinkTarget, ulTargetLen/2, usSymLinkTarget.Buffer, ulTargetLen/2 - 1);
-
-			CloseHandle(hSymLink);
-			hSymLink = NULL;
+			res = scanSymlink(hObjDir, childObj);
 		}
 
 		*parentObj = safe_realloc(*parentObj, (*parentObj)->entrySize + sizeof(void*));
@@ -275,8 +283,6 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 cleanup:
 	if (hObjDir != NULL)
 		CloseHandle(hObjDir);
-	if (hSymLink != NULL)
-		CloseHandle(hSymLink);
 	return res;
 }
 
@@ -407,6 +413,10 @@ cleanup:
 	if (res == STATUS_OBJECT_NAME_NOT_FOUND || res == STATUS_OBJECT_NAME_INVALID)
 	{
 		fprintf(stderr, " [!] No such object\n");
+	}
+	else if (res == STATUS_OBJECT_TYPE_MISMATCH)
+	{
+		fprintf(stderr, " [!] Not a directory\n");
 	}
 	return res;
 }
