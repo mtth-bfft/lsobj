@@ -18,12 +18,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. */
 
+#pragma warning(push, 0)
 #define WIN32_NO_STATUS
 #include <Windows.h>
 #include <stdio.h>
 #include <Winternl.h>
 #undef WIN32_NO_STATUS
 #include <ntstatus.h>
+#pragma warning(pop)
 
 // Object manager specific access rights from wdm.h
 #define DIRECTORY_QUERY                 (0x0001)
