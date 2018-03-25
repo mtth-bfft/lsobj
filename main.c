@@ -87,9 +87,6 @@ void print_help()
 	fprintf(stderr, "Usage: lsobj [-R to recurse] [directory path, otherwise \\ is listed]\n");
 }
 
-/**
- * Comparison function to sort objects by type, then by name
- */
 int cmp_obj_type_and_names(obj_entry_t *a, obj_entry_t *b)
 {
 	int res = _wcsicmp(a->pwszTypeName, b->pwszTypeName);
@@ -98,9 +95,6 @@ int cmp_obj_type_and_names(obj_entry_t *a, obj_entry_t *b)
 	return res;
 }
 
-/**
- * Comparison function to sort objects by name
- */
 int cmp_obj_names(obj_entry_t *a, obj_entry_t *b)
 {
 	return _wcsicmp(a->pwszName, b->pwszName);
@@ -181,7 +175,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 	if (NT_ERROR(status))
 	{
 		res = status;
-		fprintf(stderr, " [!] NtOpenDirectoryObject(): code %ld\n", res);
+		fprintf(stderr, " [!] NtOpenDirectoryObject(): code 0x%lX\n", res);
 		goto cleanup;
 	}
 
@@ -198,7 +192,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 		else if (NT_ERROR(status))
 		{
 			res = status;
-			fprintf(stderr, " [!] NtQueryDirectoryObject(): code %ld\n", res);
+			fprintf(stderr, " [!] NtQueryDirectoryObject(): code 0x%lX\n", res);
 			goto cleanup;
 		}
 		else if (pObjInfo->TypeName.Length == 0 || pObjInfo->Name.Length == 0)
@@ -236,7 +230,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 			if (NT_ERROR(status))
 			{
 				res = status;
-				fprintf(stderr, " [!] NtOpenSymbolicLinkObject(): code %ld\n", res);
+				fprintf(stderr, " [!] NtOpenSymbolicLinkObject(): code 0x%lX\n", res);
 				goto cleanup; 
 			}
 
@@ -256,7 +250,7 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 			if (NT_ERROR(status))
 			{
 				res = status;
-				fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code %ld\n", res);
+				fprintf(stderr, " [!] NtQuerySymbolicLinkObject(): code 0x%lX\n", res);
 				goto cleanup;
 			}
 
@@ -310,8 +304,8 @@ int wmain(int argc, wchar_t *argv[])
 {
 	int res = 0;
 	HANDLE hNtdll = NULL;
-	PWSTR pwzTarget = L"\\";
-	SIZE_T targetLen = 1;
+	PWSTR pwzTarget = L"";
+	SIZE_T targetLen = 0;
 	BOOL bRecurse = FALSE;
 	obj_entry_t *rootObj = NULL;
 
@@ -382,6 +376,13 @@ int wmain(int argc, wchar_t *argv[])
 		return 1;
 	}
 
+	if (argc > 2)
+	{
+		fprintf(stderr, "Error: too many arguments\n");
+		print_help();
+		return 1;
+	}
+	
 	if (argc == 2)
 		pwzTarget = argv[1];
 
@@ -401,5 +402,9 @@ int wmain(int argc, wchar_t *argv[])
 	printDirectory(rootObj);
 
 cleanup:
+	if (res == STATUS_OBJECT_NAME_NOT_FOUND || res == STATUS_OBJECT_NAME_INVALID)
+	{
+		fprintf(stderr, " [!] No such object\n");
+	}
 	return res;
 }
