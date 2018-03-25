@@ -62,6 +62,11 @@ static _NtQueryDirectoryObject pNtQueryDirectoryObject = NULL;
 static _NtOpenSymbolicLinkObject pNtOpenSymbolicLinkObject = NULL;
 static _NtQuerySymbolicLinkObject pNtQuerySymbolicLinkObject = NULL;
 
+void print_help()
+{
+	fprintf(stderr, "Usage: lsobj [-R to recurse] [directory path, otherwise \\ is listed]\n");
+}
+
 /**
  * Comparison function to sort objects by type, then by name
  */
@@ -338,12 +343,23 @@ int wmain(int argc, wchar_t *argv[])
 		goto cleanup;
 	}
 
-	if (argc >= 2 && _wcsicmp(argv[1], L"-R") == 0)
+	if (argc >= 2 && _wcsicmp(argv[1], L"-H") == 0)
+	{
+		print_help();
+		return 0;
+	}
+	else if (argc >= 2 && _wcsicmp(argv[1], L"-R") == 0)
 	{
 		bRecurse = TRUE;
 		argc--;
 		argv[1] = argv[0];
 		argv++;
+	}
+	else if (argc >= 2 && argv[1][0] == L'-')
+	{
+		fprintf(stderr, "Error: unknown option %S\n", argv[1]);
+		print_help();
+		return 1;
 	}
 
 	if (argc == 2)
