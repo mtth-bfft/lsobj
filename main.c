@@ -161,7 +161,12 @@ int scanSymlink(HANDLE hParentDir, obj_entry_t *obj)
 	if (NT_ERROR(status))
 	{
 		res = status;
-		fprintf(stderr, " [!] NtOpenSymbolicLinkObject(): code 0x%lX\n", res);
+		fprintf(stderr, " [!] NtOpenSymbolicLinkObject(%S): code 0x%lX", obj->pwszName, res);
+		if (status == STATUS_OBJECT_TYPE_MISMATCH)
+			fprintf(stderr, " (not a symbolic link, or global symlink)");
+		else if (status == STATUS_ACCESS_DENIED)
+			fprintf(stderr, " (access denied)");
+		fprintf(stderr, "\n");
 		goto cleanup;
 	}
 
@@ -226,7 +231,12 @@ int scanDirectory(HANDLE hParentDir, PCWSTR pcwDirname, obj_entry_t **parentObj,
 	if (NT_ERROR(status))
 	{
 		res = status;
-		fprintf(stderr, " [!] NtOpenDirectoryObject(): code 0x%lX\n", res);
+		fprintf(stderr, " [!] NtOpenDirectoryObject(%S): code 0x%lX", pcwDirname, res);
+		if (status == STATUS_OBJECT_TYPE_MISMATCH)
+			fprintf(stderr, " (not a directory)");
+		else if (status == STATUS_ACCESS_DENIED)
+			fprintf(stderr, " (access denied)");
+		fprintf(stderr, "\n");
 		goto cleanup;
 	}
 
@@ -286,26 +296,26 @@ cleanup:
 	return res;
 }
 
-void printEntry(obj_entry_t *obj, int depth, int last)
+void printEntry(obj_entry_t *obj, int depth)
 {
-	printf("%20S  ", obj->pwszTypeName);
+	wprintf(L"%20s  ", obj->pwszTypeName);
 	for (int i = 0; i < depth - 1; i++)
-		printf("\xB3  ");
+	    printf("|  ");
 	if (depth > 0)
-		printf("%c\xC4 ", (last ? '\xC0' : '\xC3'));
+		printf("+- ");
 	printf("%S", obj->pwszName);
 	if (_wcsicmp(obj->pwszTypeName, L"SymbolicLink") == 0)
 	{
-		printf(" -> %S", obj->pwszSymlinkTarget);
+		printf(" -> %S", (obj->pwszSymlinkTarget == NULL ? L"(unknown)" : obj->pwszSymlinkTarget));
 	}
 	printf("\n");
 	for (SIZE_T i = 0; i < obj->childObjCount; i++)
-		printEntry(obj->pChildObj[i], depth + 1, (i == obj->childObjCount - 1));
+		printEntry(obj->pChildObj[i], depth + 1);
 }
 
 void printDirectory(obj_entry_t *objDir)
 {
-	printEntry(objDir, 0, 1);
+	printEntry(objDir, 0);
 }
 
 int wmain(int argc, wchar_t *argv[])
@@ -404,19 +414,9 @@ int wmain(int argc, wchar_t *argv[])
 	rootObj->entrySize = sizeof(*rootObj);
 	
 	res = scanDirectory(NULL, pwzTarget, &rootObj, bRecurse);
-	if (res != 0)
-		goto cleanup;
 
 	printDirectory(rootObj);
 
 cleanup:
-	if (res == STATUS_OBJECT_NAME_NOT_FOUND || res == STATUS_OBJECT_NAME_INVALID)
-	{
-		fprintf(stderr, " [!] No such object\n");
-	}
-	else if (res == STATUS_OBJECT_TYPE_MISMATCH)
-	{
-		fprintf(stderr, " [!] Not a directory\n");
-	}
 	return res;
 }
